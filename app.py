@@ -1,45 +1,56 @@
 import gradio as gr
 import pandas as pd
-import joblib
 import os
+import joblib
 
 from features import team_form
+from elo_engine import EloEngine
 
 # -----------------------------
-# LOAD MODEL + DATA
+# LOAD DATA
 # -----------------------------
-BASE_DIR = os.path.dirname(__file__)
+BASE = os.path.dirname(__file__)
 
-model = joblib.load(os.path.join(BASE_DIR, "model.pkl"))
-df = pd.read_csv(os.path.join(BASE_DIR, "matches.csv"))
+df = pd.read_csv(os.path.join(BASE, "matches.csv"))
+model = joblib.load(os.path.join(BASE, "model.pkl"))
 
 teams = sorted(df["HomeTeam"].unique())
 
+elo = EloEngine(teams)
+
 # -----------------------------
-# FEATURE ENGINEERING
+# FEATURE BUILDER
 # -----------------------------
-def build_features(team):
+def build(team):
     return team_form(df, team)
 
 # -----------------------------
-# PREDICTION FUNCTION
+# PREDICTION ENGINE
 # -----------------------------
 def predict(home, away):
 
-    home_form = build_features(home)
-    away_form = build_features(away)
+    home_form = build(home)
+    away_form = build(away)
 
-    home_elo = 1500
-    away_elo = 1500
+    home_elo = elo.ratings[home]
+    away_elo = elo.ratings[away]
 
     X = [home_form + away_form + [home_elo, away_elo]]
 
     probs = model.predict_proba(X)[0]
+    probs = probs / probs.sum()
+
+    # convert to match strength
+    result_strength = probs[2] + 0.5 * probs[1]
+
+    elo.update(home, away, result_strength)
 
     return {
-        "Home Win": float(probs[2]),
-        "Draw": float(probs[1]),
-        "Away Win": float(probs[0])
+        "Home Win (%)": f"{round(probs[2] * 100, 1)}%",
+        "Draw (%)": f"{round(probs[1] * 100, 1)}%",
+        "Away Win (%)": f"{round(probs[0] * 100, 1)}%",
+        "Home Elo": round(elo.ratings[home], 1),
+        "Away Elo": round(elo.ratings[away], 1)
     }
 
 # -----------------------------
@@ -52,8 +63,8 @@ app = gr.Interface(
         gr.Dropdown(teams, label="Away Team")
     ],
     outputs="json",
-    title="⚽ Football Match Predictor AI",
-    description="Predict Premier League match outcomes using ML + form stats"
+    title="⚽ Pro Football AI System",
+    description="Elo + Form + ML probability engine"
 )
 
 app.launch()
