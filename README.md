@@ -1,3 +1,15 @@
+---
+title: Pro Football AI System
+emoji: ⚽
+colorFrom: blue
+colorTo: green
+sdk: gradio
+sdk_version: 4.0.0
+app_file: app.py
+pinned: false
+---
+
+
 ⚽ Pro Football AI System
 
 A machine learning football prediction engine that combines Elo rating dynamics, team form analysis, and probabilistic ML modeling to predict match outcomes.
