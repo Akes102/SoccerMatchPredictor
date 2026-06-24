@@ -1,74 +1,78 @@
 import pandas as pd
 import joblib
-
+import os
+from features import team_form
 from elo import update_elo
 
-DEFAULT_ELO = 1500
+# -----------------------------
+# LOAD DATA + MODEL
+# -----------------------------
+BASE_DIR = os.path.dirname(__file__)
 
+MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
+DATA_PATH = os.path.join(BASE_DIR, "matches.csv")
 
-def get_form(df, team):
-    matches = df[
-        (df["HomeTeam"] == team) |
-        (df["AwayTeam"] == team)
-    ].tail(10)
+model = joblib.load(MODEL_PATH)
+df = pd.read_csv(DATA_PATH)
 
-    wins = draws = losses = 0
-    gf = ga = 0
+teams = sorted(df["HomeTeam"].unique())
 
-    for _, row in matches.iterrows():
+# -----------------------------
+# BUILD FEATURE VECTOR
+# -----------------------------
+def build_features(team):
+    return team_form(df, team)
 
-        if row["HomeTeam"] == team:
-            gf += row["FTHG"]
-            ga += row["FTAG"]
+# -----------------------------
+# PREDICT FUNCTION
+# -----------------------------
+def predict_match(home, away):
 
-            if row["FTR"] == "H":
-                wins += 1
-            elif row["FTR"] == "D":
-                draws += 1
-            else:
-                losses += 1
-        else:
-            gf += row["FTAG"]
-            ga += row["FTHG"]
+    home_form = build_features(home)
+    away_form = build_features(away)
 
-            if row["FTR"] == "A":
-                wins += 1
-            elif row["FTR"] == "D":
-                draws += 1
-            else:
-                losses += 1
+    # Elo memory store
+    if not hasattr(predict_match, "elo"):
+        predict_match.elo = {t: 1500 for t in teams}
 
-    played = max(len(matches), 1)
+    home_elo = predict_match.elo.get(home, 1500)
+    away_elo = predict_match.elo.get(away, 1500)
 
-    return [
-        wins,
-        draws,
-        losses,
-        gf / played,
-        ga / played,
-        (gf - ga) / played
-    ]
+    # model input
+    X = [home_form + away_form + [home_elo, away_elo]]
 
+    probs = model.predict_proba(X)[0]
 
-model = joblib.load("model.pkl")
-df = pd.read_csv("data/matches.csv")
+    # convert to match result strength
+    result = probs[2] + 0.5 * probs[1]
 
-home = input("Home Team: ")
-away = input("Away Team: ")
+    # Elo update
+    expected_home = 1 / (1 + 10 ** ((away_elo - home_elo) / 400))
 
-home_form = get_form(df, home)
-away_form = get_form(df, away)
+    new_home_elo, new_away_elo = update_elo(
+        home_elo,
+        away_elo,
+        result
+    )
 
-home_elo = DEFAULT_ELO
-away_elo = DEFAULT_ELO
+    predict_match.elo[home] = new_home_elo
+    predict_match.elo[away] = new_away_elo
 
-features = [home_form + away_form + [home_elo, away_elo]]
+    # normalize probabilities
+    probs = probs / probs.sum()
 
-probs = model.predict_proba(features)[0]
+    return {
+        "Home Win (%)": f"{round(probs[2] * 100, 1)}%",
+        "Draw (%)": f"{round(probs[1] * 100, 1)}%",
+        "Away Win (%)": f"{round(probs[0] * 100, 1)}%"
+    }
 
-print("\nPrediction")
-print("-" * 30)
+# -----------------------------
+# TEST RUN (optional local use)
+# -----------------------------
+if __name__ == "__main__":
+    home = input("Home team: ")
+    away = input("Away team: ")
 
-print(f"Away Win : {probs[0]:.2%}")
-print(f"Draw     : {probs[1]:.2%}")
-print(f"Home Win : {probs[2]:.2%}")
+    result = predict_match(home, away)
+    print(result)
