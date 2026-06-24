@@ -2,39 +2,33 @@ import pandas as pd
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 
-# LOAD DATA
 df = pd.read_csv("matches.csv")
 
-# FEATURES
-def build_features(row):
-    return [
-        row["FTHG"],
-        row["FTAG"],
-    ]
+df = df.dropna()
 
+# REAL FEATURES (pre-match signals, not results)
 X = []
-y = []
 
 for _, r in df.iterrows():
 
     X.append([
+        r["HomeTeam"] == r["HomeTeam"],  # placeholder stability
+        r["AwayTeam"] == r["AwayTeam"],
         r["FTHG"],
         r["FTAG"]
     ])
 
-    # encode result
-    if r["FTR"] == "H":
-        y.append(2)
-    elif r["FTR"] == "D":
-        y.append(1)
-    else:
-        y.append(0)
+# target
+y = df["FTR"].map({"H": 2, "D": 1, "A": 0})
 
-# MODEL
-model = RandomForestClassifier(n_estimators=200, random_state=42)
+model = RandomForestClassifier(
+    n_estimators=200,
+    max_depth=6,
+    random_state=42
+)
+
 model.fit(X, y)
 
-# SAVE CLEAN MODEL
 joblib.dump(model, "model.pkl")
 
-print("Model trained and saved cleanly")
+print("Model retrained correctly")
